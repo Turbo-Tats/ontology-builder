@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>/*TITLE*/</title>
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f6f6f7; --fg: #1a1a1c; --muted: #6b6b73; --border: #d9d9de;
+    --core: #1f4fd8; --core-fg: #ffffff; --planned: #8a8a94;
+    --current: #2b2b30; --target: #1f4fd8; --confirm: #c2410c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161618; --surface: #1e1e22; --fg: #ececee; --muted: #9a9aa4; --border: #34343a;
+      --core: #6d8dff; --core-fg: #101014; --planned: #7a7a84;
+      --current: #d8d8de; --target: #6d8dff; --confirm: #fb923c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .legend, .filters { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 12px; align-items: center; }
+  .filters label { cursor: pointer; display: flex; gap: 4px; align-items: center; color: var(--fg); }
+  .sw { display: inline-block; width: 26px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
+  main { display: grid; grid-template-columns: 1fr 320px; min-height: calc(100vh - 60px); }
+  #stage { width: 100%; height: calc(100vh - 60px); display: block; cursor: grab; }
+  aside { border-left: 1px solid var(--border); padding: 16px; background: var(--surface); overflow: auto; max-height: calc(100vh - 60px); }
+  aside h2 { font-size: 15px; margin: 0 0 4px; }
+  aside p { margin: 6px 0; color: var(--muted); }
+  aside ul { padding-left: 16px; margin: 6px 0; }
+  aside li { margin: 4px 0; }
+  .tag { font-size: 11px; border: 1px solid var(--border); border-radius: 10px; padding: 0 6px; color: var(--muted); }
+  .note { color: var(--muted); font-size: 12px; display: block; }
+  .edge { fill: none; stroke-width: 1.6; }
+  .edge.current { stroke: var(--current); }
+  .edge.target { stroke: var(--target); stroke-dasharray: 7 5; }
+  .edge.confirm { stroke: var(--confirm); stroke-dasharray: 2 4; }
+  .elabel { font-size: 10px; fill: var(--muted); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+  .node circle { stroke-width: 2; cursor: pointer; }
+  .node.modeled circle { fill: var(--core); stroke: var(--core); }
+  .node.fragmented circle { fill: url(#hatch); stroke: var(--core); stroke-dasharray: 5 3; }
+  .node.conceptual circle { fill: var(--bg); stroke: var(--planned); stroke-dasharray: 3 3; }
+  .node text { font-size: 12px; text-anchor: middle; pointer-events: none; font-weight: 600; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; fill: var(--fg); }
+  .dim { opacity: 0.12; }
+  @media (max-width: 800px) {
+    main { grid-template-columns: 1fr; }
+    aside { border-left: 0; border-top: 1px solid var(--border); max-height: none; }
+    #stage { height: 60vh; }
+  }
+  .node.fresh circle { stroke: var(--confirm); stroke-width: 4; }
+</style>
+</head>
+<body>
+<header>
+  <h1>/*TITLE*/</h1>
+  <div class="legend">
+    <span><span class="sw" style="border-color:var(--current)"></span>current</span>
+    <span><span class="sw" style="border-color:var(--target);border-top-style:dashed"></span>target</span>
+    <span><span class="sw" style="border-color:var(--confirm);border-top-style:dotted"></span>to confirm</span>
+    <span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="var(--core)"/></svg> modeled</span>
+    <span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="none" stroke="var(--core)" stroke-dasharray="3 2" stroke-width="2"/></svg> fragmented</span>
+    <span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="none" stroke="var(--planned)" stroke-dasharray="2 2" stroke-width="2"/></svg> conceptual</span>
+    <span><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="var(--confirm)"/></svg> v = implicitly versioned</span>
+  </div>
+  <div class="filters" id="filters"></div>
+</header>
+<main>
+  <svg id="stage" role="img" aria-label="Ontology knowledge graph"></svg>
+  <aside id="panel"><h2>Select a concept</h2><p>Click a node to see its relationships and edge labels. Drag nodes to rearrange. Click empty space to reset.</p></aside>
+</main>
+<script>
+const GRAPH = /*GRAPH_JSON*/;
+const LIVE = /*LIVE*/false;
+const NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("stage");
+const panel = document.getElementById("panel");
+const show = { current: true, target: true, confirm: true };
+let W = 900, H = 600, selected = null;
+let nodes = [], byId = {}, edges = [], loaded = false;
+function applyGraph(g) {
+  const old = byId, now = Date.now();
+  nodes = g.nodes.map(n => {
+    const o = old[n.id];
+    return { ...n, core: n.realization === "modeled", x: o ? o.x : W / 2 + (Math.random() - 0.5) * 80, y: o ? o.y : H / 2 + (Math.random() - 0.5) * 80, vx: 0, vy: 0, fixed: o ? o.fixed : false, fresh: o ? o.fresh : (LIVE && loaded ? now : 0) };
+  });
+  byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+  edges = g.edges.map(e => ({ ...e, status: e.status || "current" }));
+}
+applyGraph(GRAPH);
+loaded = true;
+
+const el = (name, attrs = {}, parent) => {
+  const e = document.createElementNS(NS, name);
+  Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+  if (parent) parent.appendChild(e);
+  return e;
+};
+
+const defs = el("defs", {}, svg);
+const hatch = el("pattern", { id: "hatch", width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, defs);
+el("rect", { width: 6, height: 6, fill: "var(--bg)" }, hatch);
+el("rect", { width: 3, height: 6, fill: "var(--core)", opacity: 0.55 }, hatch);
+["current", "target", "confirm"].forEach(s => {
+  const m = el("marker", { id: "a-" + s, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, defs);
+  el("path", { d: "M0 0L10 5L0 10z", fill: `var(--${s})` }, m);
+});
+const edgeLayer = el("g", {}, svg);
+const labelLayer = el("g", {}, svg);
+const nodeLayer = el("g", {}, svg);
+
+function resize() {
+  const r = svg.getBoundingClientRect();
+  W = r.width; H = r.height;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+}
+function seed() {
+  nodes.forEach((n, i) => {
+    const a = (i / nodes.length) * Math.PI * 2;
+    const r = n.core ? 0.18 : 0.38;
+    n.x = W / 2 + Math.cos(a) * W * r;
+    n.y = H / 2 + Math.sin(a) * H * r;
+    n.fixed = false;
+  });
+}
+resize();
+window.addEventListener("resize", () => { resize(); seed(); simulate(300); });
+
+const visibleEdges = () => edges.filter(e => show[e.status] && byId[e.from] && byId[e.to]);
+
+function simulate(steps) {
+  const es = visibleEdges();
+  for (let s = 0; s < steps; s++) {
+    for (const a of nodes) for (const b of nodes) {
+      if (a === b) continue;
+      let dx = a.x - b.x + (Math.random() - 0.5) * 0.1, dy = a.y - b.y + (Math.random() - 0.5) * 0.1, d2 = dx * dx + dy * dy + 0.01, d = Math.sqrt(d2);
+      const f = (Math.min(W, H) * Math.min(W, H) * 0.1) / d2;
+      a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+    }
+    for (const e of es) {
+      const a = byId[e.from], b = byId[e.to];
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const f = (d - Math.min(W, H) * 0.34) * 0.012;
+      a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+      b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+    }
+    for (const n of nodes) {
+      n.vx += (W / 2 - n.x) * 0.002; n.vy += (H / 2 - n.y) * 0.002;
+      if (n.fixed) { n.vx = n.vy = 0; continue; }
+      n.x = Math.min(W - 50, Math.max(50, n.x + n.vx)); n.y = Math.min(H - 70, Math.max(40, n.y + n.vy));
+      n.vx *= 0.82; n.vy *= 0.82;
+    }
+  }
+  draw();
+}
+
+function edgePath(a, b, idx, total) {
+  const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ux = dx / d, uy = dy / d, R = 26;
+  const sx = a.x + ux * R, sy = a.y + uy * R, ex = b.x - ux * (R + 4), ey = b.y - uy * (R + 4);
+  const off = (idx - (total - 1) / 2) * 34;
+  const mx = (sx + ex) / 2 - uy * off, my = (sy + ey) / 2 + ux * off;
+  return { d: `M${sx},${sy} Q${mx},${my} ${ex},${ey}`, lx: (sx + 2 * mx + ex) / 4, ly: (sy + 2 * my + ey) / 4 };
+}
+
+function related(id) {
+  const set = new Set([id]);
+  visibleEdges().forEach(e => { if (e.from === id) set.add(e.to); if (e.to === id) set.add(e.from); });
+  return set;
+}
+
+function draw() {
+  edgeLayer.replaceChildren(); labelLayer.replaceChildren(); nodeLayer.replaceChildren();
+  const es = visibleEdges();
+  const groups = {};
+  es.forEach(e => { const k = [e.from, e.to].sort().join("|"); (groups[k] = groups[k] || []).push(e); });
+  const rel = selected ? related(selected) : null;
+  es.forEach(e => {
+    const k = [e.from, e.to].sort().join("|");
+    const g = groups[k], idx = g.indexOf(e);
+    const a = byId[e.from], b = byId[e.to];
+    const p = edgePath(a, b, idx, g.length);
+    const active = !selected || e.from === selected || e.to === selected;
+    const path = el("path", { d: p.d, class: `edge ${e.status}${active ? "" : " dim"}`, "marker-end": `url(#a-${e.status})` }, edgeLayer);
+    if (selected && active) {
+      const t = el("text", { x: p.lx, y: p.ly, class: "elabel", "text-anchor": "middle" }, labelLayer);
+      t.textContent = e.rel.replaceAll("_", " ");
+    }
+  });
+  nodes.forEach(n => {
+    const g = el("g", { class: `node ${n.realization || "conceptual"}${rel && !rel.has(n.id) ? " dim" : ""}${n.fresh && Date.now() - n.fresh < 4000 ? " fresh" : ""}`, transform: `translate(${n.x},${n.y})` }, nodeLayer);
+    el("circle", { r: n.id === selected ? 30 : 26 }, g);
+    if (n.versioning && n.versioning !== "none") {
+      const b = el("g", { transform: "translate(20,-20)" }, g);
+      el("circle", { r: 9, fill: "var(--confirm)" }, b);
+      const bt = el("text", { y: 3.5, style: "fill:#fff;stroke:none;font-size:10px" }, b); bt.textContent = "v";
+    }
+    const t = el("text", { y: 44 }, g); t.textContent = n.id.replace(/([a-z])([A-Z])/g, "$1 $2");
+    g.addEventListener("pointerdown", ev => startDrag(ev, n));
+  });
+}
+
+let drag = null;
+function startDrag(ev, n) {
+  ev.stopPropagation();
+  drag = { n, moved: false };
+  svg.setPointerCapture(ev.pointerId);
+}
+svg.addEventListener("pointermove", ev => {
+  if (!drag) return;
+  const r = svg.getBoundingClientRect();
+  drag.n.x = ev.clientX - r.left; drag.n.y = ev.clientY - r.top;
+  drag.moved = true; draw();
+});
+svg.addEventListener("pointerup", () => {
+  if (!drag) return;
+  if (!drag.moved) select(drag.n.id);
+  else drag.n.fixed = true;
+  drag = null;
+});
+svg.addEventListener("pointerdown", ev => { if (ev.target === svg) select(null); });
+
+function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+function select(id) {
+  selected = id; draw();
+  if (!id) { panel.innerHTML = "<h2>Select a concept</h2><p>Click a node to see its relationships and edge labels. Drag nodes to rearrange. Click empty space to reset.</p>"; return; }
+  const n = byId[id];
+  const out = edges.filter(e => e.from === id), inn = edges.filter(e => e.to === id);
+  const row = (e, other, arrow) => `<li>${arrow} <b>${esc(e.rel.replaceAll("_", " "))}</b> ${esc(other)} <span class="tag">${e.status}</span>${e.cardinality ? ` <span class="tag">${esc(e.cardinality)}</span>` : ""}${e.note ? `<span class="note">${esc(e.note)}</span>` : ""}</li>`;
+  panel.innerHTML = `<h2>${esc(n.id)}</h2>
+    <p><span class="tag">${esc(n.realization || "conceptual")}</span> <span class="tag">versioning: ${esc(n.versioning || "none")}</span> <span class="tag">home: ${esc(n.home || "none")}</span></p>
+    <p>${esc(n.note || "")}</p>
+    <p>Card: <code>${esc(n.card || "none")}</code></p>
+    <b>Outgoing</b><ul>${out.map(e => row(e, e.to, "to")).join("") || "<li>none</li>"}</ul>
+    <b>Incoming</b><ul>${inn.map(e => row(e, e.from, "from")).join("") || "<li>none</li>"}</ul>`;
+}
+
+const filters = document.getElementById("filters");
+Object.keys(show).forEach(k => {
+  const l = document.createElement("label");
+  l.innerHTML = `<input type="checkbox" checked> ${k}`;
+  l.firstElementChild.addEventListener("change", ev => { show[k] = ev.target.checked; nodes.forEach(n => n.fixed = false); simulate(200); });
+  filters.appendChild(l);
+});
+
+function start() {
+  resize();
+  if (W < 100 || H < 100) { requestAnimationFrame(start); return; }
+  seed(); simulate(400);
+}
+start();
+
+if (LIVE) {
+  let last = JSON.stringify(GRAPH);
+  setInterval(async () => {
+    try {
+      const text = await (await fetch("graph.json", { cache: "no-store" })).text();
+      if (text === last) return;
+      last = text;
+      const g = JSON.parse(text);
+      applyGraph(g);
+      if (selected && !byId[selected]) selected = null;
+      if (g.title) { document.title = g.title; document.querySelector("h1").textContent = g.title; }
+      simulate(150);
+      if (selected) select(selected);
+      setTimeout(draw, 4100);
+    } catch (e) { /* server not ready or graph mid-edit; try again next tick */ }
+  }, 1000);
+}
+</script>
+</body>
+</html>

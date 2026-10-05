@@ -49,6 +49,7 @@
     aside { border-left: 0; border-top: 1px solid var(--border); max-height: none; }
     #stage { height: 60vh; }
   }
+  .node.fresh circle { stroke: var(--confirm); stroke-width: 4; }
 </style>
 </head>
 <body>
@@ -71,14 +72,24 @@
 </main>
 <script>
 const GRAPH = /*GRAPH_JSON*/;
+const LIVE = /*LIVE*/false;
 const NS = "http://www.w3.org/2000/svg";
 const svg = document.getElementById("stage");
 const panel = document.getElementById("panel");
 const show = { current: true, target: true, confirm: true };
-const nodes = GRAPH.nodes.map((n, i) => ({ ...n, core: n.realization === "modeled", x: 0, y: 0, vx: 0, vy: 0 }));
-const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
-const edges = GRAPH.edges.map(e => ({ ...e, status: e.status || "current" }));
 let W = 900, H = 600, selected = null;
+let nodes = [], byId = {}, edges = [], loaded = false;
+function applyGraph(g) {
+  const old = byId, now = Date.now();
+  nodes = g.nodes.map(n => {
+    const o = old[n.id];
+    return { ...n, core: n.realization === "modeled", x: o ? o.x : W / 2 + (Math.random() - 0.5) * 80, y: o ? o.y : H / 2 + (Math.random() - 0.5) * 80, vx: 0, vy: 0, fixed: o ? o.fixed : false, fresh: o ? o.fresh : (LIVE && loaded ? now : 0) };
+  });
+  byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+  edges = g.edges.map(e => ({ ...e, status: e.status || "current" }));
+}
+applyGraph(GRAPH);
+loaded = true;
 
 const el = (name, attrs = {}, parent) => {
   const e = document.createElementNS(NS, name);
@@ -178,7 +189,7 @@ function draw() {
     }
   });
   nodes.forEach(n => {
-    const g = el("g", { class: `node ${n.realization || "conceptual"}${rel && !rel.has(n.id) ? " dim" : ""}`, transform: `translate(${n.x},${n.y})` }, nodeLayer);
+    const g = el("g", { class: `node ${n.realization || "conceptual"}${rel && !rel.has(n.id) ? " dim" : ""}${n.fresh && Date.now() - n.fresh < 4000 ? " fresh" : ""}`, transform: `translate(${n.x},${n.y})` }, nodeLayer);
     el("circle", { r: n.id === selected ? 30 : 26 }, g);
     if (n.versioning && n.versioning !== "none") {
       const b = el("g", { transform: "translate(20,-20)" }, g);
@@ -240,6 +251,24 @@ function start() {
   seed(); simulate(400);
 }
 start();
+
+if (LIVE) {
+  let last = JSON.stringify(GRAPH);
+  setInterval(async () => {
+    try {
+      const text = await (await fetch("graph.json", { cache: "no-store" })).text();
+      if (text === last) return;
+      last = text;
+      const g = JSON.parse(text);
+      applyGraph(g);
+      if (selected && !byId[selected]) selected = null;
+      if (g.title) { document.title = g.title; document.querySelector("h1").textContent = g.title; }
+      simulate(150);
+      if (selected) select(selected);
+      setTimeout(draw, 4100);
+    } catch (e) { /* server not ready or graph mid-edit; try again next tick */ }
+  }, 1000);
+}
 </script>
 </body>
 </html>

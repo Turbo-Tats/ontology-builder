@@ -80,6 +80,9 @@ def main():
     if not index_text:
         err("index.md is missing")
 
+    if index_text and not re.search(r"^## Using this ontology\s*$", index_text, re.M):
+        err("index.md: missing the '## Using this ontology' block that tells agents how to read the cards")
+
     card_files = {n["card"] for n in nodes.values()}
     stray = [p.name for p in folder.glob("*.md") if p.name != "index.md" and p.name not in card_files]
     for s in stray:

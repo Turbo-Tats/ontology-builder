@@ -22,6 +22,7 @@ Start with one short paragraph, in plain language, on what the PM will get: a ca
 3. **Sources.** Ask for diagrams, specs or handoff notes (Figma boards load in the built-in browser; zoom to read small text). If there are none, say you will start from the UI and code. State which sources are proposals rather than facts. Also confirm the owner and the output folder (default `docs/ontology/<area>/`).
 4. **Concept list: you propose first.** Scan the area's UI labels, routes, tables and docs, then propose candidate concepts with a one-line definition each. Flag suspected name collisions (one word used for several things) and concepts that look missing. Recommend merges and splits. The PM adds, removes and renames.
 5. **Confirm the brief.** Show goal, scope, concept list, folder and expected PR split in a few lines. Proceed to the method only after the PM approves.
+6. **Start the live graph.** Once the concept list is approved, write a first `graph.yaml` (a node per concept, `card` filenames filled in, edges as you learn them) and start the live viewer in the background: `python3 .claude/skills/ontology-builder/build_graph.py docs/ontology/<area> --serve`. Open `http://127.0.0.1:8765` in the built-in browser if one is available, otherwise give the PM the URL. From here on, edit `graph.yaml` as soon as the PM confirms a concept, status or relationship; the page redraws within a couple of seconds, keeps node positions and briefly highlights new nodes, so the PM watches the semantic relationships take shape. Say what you just added each time. The live view writes no files and is not validated; the cards come later.
 
 Check in again after the first two cards are drafted, so the PM confirms the pattern before you batch the rest.
 
@@ -53,6 +54,8 @@ python3 .claude/skills/ontology-builder/validate.py docs/ontology/<area> [--remo
 python3 .claude/skills/ontology-builder/build_graph.py docs/ontology/<area>
 ```
 
+Stop the live viewer (kill the background process) before the final build, which writes the standalone `graph.html`.
+
 Do not pipe either to `head` or `tail`; some shells hang. Redirect to a file instead.
 
 ### Investigation agent brief (template)
@@ -69,6 +72,7 @@ Do not pipe either to `head` or `tail`; some shells hang. Redirect to a file ins
 - **A missing concept shows up as a gap.** When several consumers each re-derive "the one set" differently, ask whether a concept is missing.
 - **Respect scope calls.** Drop deprecated features and out-of-scope systems everywhere, including notes (use `--removed`).
 - **Missing relationships:** if the business model has an edge that code lacks, record a `target` edge and say what is missing in `note`.
+- **Cards are read by agents with limited context.** Keep each card short enough to read in one pass (roughly 60 to 100 lines). Put the highest-value rules in "What it is NOT" and the tagged invariants, use small tables instead of prose, and do not paste schemas.
 - Worked examples are illustrative; label them. No emoji, sentence case, plain hyphens.
 
 ## Card skeleton
@@ -115,6 +119,21 @@ One realistic instance. Illustrative.
 What a new engineer or agent would get wrong.
 ```
 
+`index.md` must contain, besides the concept table (concept, one-line definition, card link), the disambiguation table, cross-cutting rules and sources, this block (adapt the wording, keep the heading):
+
+```markdown
+## Using this ontology
+
+For agents and people. Read this before any card.
+
+- Start with the disambiguation table. If a word in your task appears there, resolve which concept is meant before reading further.
+- Open the card for the concept you are working on. Open a neighbouring card only if `related` or `graph.yaml` links it to your task.
+- `[current]` is verified in code today. `[target]` is the intended model and is NOT true yet; never assume it. `[confirm]` is unverified; say so if you rely on it.
+- Do not infer business rules from table or column names. If a rule is not in a card, ask.
+- `graph.yaml` lists every relationship; a card's `related` list shows only the main ones.
+- Question to card: <list the 3 to 6 questions people most often ask and which card answers each>.
+```
+
 `graph.yaml` lines:
 
 ```yaml
@@ -133,4 +152,4 @@ Cardinalities agree across a card, its counterpart and the graph; the same fact 
 
 ## Finish
 
-Report the biggest gaps found, the open questions for the PM, and the count of remaining `[confirm]` items (validate prints it). Someone named by the PM must clear `[confirm]` items before the ontology counts as agreed. Then offer to commit on a correctly named branch. A change to the architecture doc is out of scope unless the PM asks.
+Report the biggest gaps found, the open questions for the PM, and the count of remaining `[confirm]` items (validate prints it). Someone named by the PM must clear `[confirm]` items before the ontology counts as agreed. Then offer to add a one-line pointer to the ontology folder in the repo's agent instructions file (`CLAUDE.md`, `AGENTS.md` or similar), so agents find it; do this only if the PM agrees. Then offer to commit on a correctly named branch. Changes to architecture docs are out of scope unless the PM asks.

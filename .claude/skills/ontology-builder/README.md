@@ -26,7 +26,9 @@ In Claude Code, ask for it in your own words:
 
 Claude first confirms your goal and scope, proposes a list of concepts from your UI and code, and asks you to correct it. It then investigates the code, shows you what it found, and asks one question at a time. Cards are written into `docs/ontology/<area>/` by default.
 
-You can also run the scripts yourself:
+Once the concept list is agreed, Claude starts a live graph in your browser and updates it as you confirm concepts and relationships, so you can watch it take shape.
+
+You can also run the scripts yourself (add `--serve` to `build_graph.py` for the live view):
 
 ```bash
 python3 .claude/skills/ontology-builder/validate.py docs/ontology/<area> [--removed Name1,Name2]
